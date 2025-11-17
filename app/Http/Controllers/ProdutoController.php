@@ -13,7 +13,6 @@ class ProdutoController extends Controller
     // GET /produtos
     public function index(Request $request)
     {
-        // Filtro por categoria salvo em sessão
         $categoryId = $request->input('category_id', $request->session()->get('filter_category'));
 
         if ($request->has('category_id')) {
@@ -34,8 +33,6 @@ class ProdutoController extends Controller
     public function create(Request $request)
     {
         $categories = Categoria::orderBy('name')->get();
-
-        // Última categoria do cookie
         $lastCategory = $request->cookie('last_category');
 
         return view('produtos.create', compact('categories', 'lastCategory'));
@@ -43,35 +40,29 @@ class ProdutoController extends Controller
 
     // POST /produtos
     public function store(Request $request)
-{
-    $data = $request->validate([
-        'category_id' => ['required','exists:categories,id'],
-        'name'        => ['required','string','max:150'],
-        'price'       => ['required','numeric','min:0'],
-        'image'       => ['nullable','image','mimes:jpg,jpeg,png','max:2048'],
-        'description' => ['nullable','string','max:2000'],
-    ]);
+    {
+        $data = $request->validate([
+            'category_id' => ['required','exists:categories,id'],
+            'name'        => ['required','string','max:150'],
+            'price'       => ['required','numeric','min:0'],
+            'image'       => ['nullable','image','mimes:jpg,jpeg,png','max:2048'],
+            'description' => ['nullable','string','max:2000'],
+        ]);
 
-    if ($request->hasFile('image')) {
-        $data['image_path'] = $request->file('image')->store('products', 'public');
+        // Upload da imagem
+        if ($request->hasFile('image')) {
+            $data['image_path'] = $request->file('image')->store('products', 'public');
+        }
+
+        // Salva produto
+        $produto = Produto::create($data);
+
+        // Salva cookie da última categoria
+        Cookie::queue('last_category', $data['category_id'], 60 * 24 * 30);
+
+        return redirect()->route('produtos.index')
+            ->with('success', 'Produto criado com sucesso!');
     }
-if ($request->hasFile('image')) {
-    $file = $request->file('image');
-    dd([
-        'exists' => $file->isValid(),
-        'originalName' => $file->getClientOriginalName(),
-        'size' => $file->getSize(),
-    ]);
-}
-    $produto = Produto::create($data);
-
-    // AQUI sim, $data já existe
-    Cookie::queue('last_category', $data['category_id'], 60 * 24 * 30);
-
-    return redirect()->route('produtos.index')
-        ->with('success', 'Produto criado com sucesso!');
-}
-
 
     // GET /produtos/{produto}/edit
     public function edit(Produto $produto)
@@ -82,34 +73,31 @@ if ($request->hasFile('image')) {
     }
 
     // PUT /produtos/{produto}
-   public function update(Request $request, Produto $produto)
-{
-    $data = $request->validate([
-        'category_id' => ['required','exists:categories,id'],
-        'name'        => ['required','string','max:150'],
-        'price'       => ['required','numeric','min:0'],
-        'image'       => ['nullable','image','mimes:jpeg,jpg,png','max:2048'],
-        'description' => ['nullable','string','max:2000'],
-    ]);
+    public function update(Request $request, Produto $produto)
+    {
+        $data = $request->validate([
+            'category_id' => ['required','exists:categories,id'],
+            'name'        => ['required','string','max:150'],
+            'price'       => ['required','numeric','min:0'],
+            'image'       => ['nullable','image','mimes:jpeg,jpg,png','max:2048'],
+            'description' => ['nullable','string','max:2000'],
+        ]);
 
-    // Troca de imagem
-    if ($request->hasFile('image')) {
-        if ($produto->image_path) {
-            Storage::disk('public')->delete($produto->image_path);
+        // Troca de imagem
+        if ($request->hasFile('image')) {
+            if ($produto->image_path) {
+                Storage::disk('public')->delete($produto->image_path);
+            }
+            $data['image_path'] = $request->file('image')->store('products', 'public');
         }
 
-        $data['image_path'] = $request->file('image')->store('products', 'public');
+        $produto->update($data);
+
+        Cookie::queue('last_category', $produto->category_id, 60 * 24 * 30);
+
+        return redirect()->route('produtos.index')
+            ->with('success', 'Produto atualizado com sucesso!');
     }
-
-    $produto->update($data);
-
-    // Cookie correto
-    Cookie::queue('last_category', $produto->category_id, 60 * 24 * 30);
-
-    return redirect()->route('produtos.index')
-        ->with('success', 'Produto atualizado com sucesso!');
-}
-
 
     // DELETE /produtos/{produto}
     public function destroy(Produto $produto)
@@ -123,5 +111,4 @@ if ($request->hasFile('image')) {
         return redirect()->route('produtos.index')
             ->with('success', 'Produto excluído com sucesso!');
     }
-    
 }
