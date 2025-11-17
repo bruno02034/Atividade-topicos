@@ -2,98 +2,126 @@
 
 namespace App\Http\Controllers;
 
-
-use App\Models\Product;
-use App\Models\Category;
+use App\Models\Produto;
+use App\Models\Categoria;
 use Illuminate\Http\Request;
-use App\Http\Requests\StoreProductRequest;
-use App\Http\Requests\UpdateProductRequest;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Cookie;
+use Illuminate\Support\Facades\Storage;
 
 class ProdutoController extends Controller
 {
+    // GET /produtos
     public function index(Request $request)
     {
-        // Filtro por categoria salvo em SESSÃO
+        // Filtro por categoria salvo em sessão
         $categoryId = $request->input('category_id', $request->session()->get('filter_category'));
 
         if ($request->has('category_id')) {
             $request->session()->put('filter_category', $categoryId);
         }
 
-        $products = Product::with('category')
+        $products = Produto::with('category')
             ->when($categoryId, fn($q) => $q->where('category_id', $categoryId))
             ->orderBy('name')
             ->paginate(10);
 
-        $categories = Category::orderBy('name')->get();
+        $categories = Categoria::orderBy('name')->get();
 
-        return view('products.index', compact('products','categories','categoryId'));
+        return view('produtos.index', compact('products', 'categories', 'categoryId'));
     }
 
+    // GET /produtos/create
     public function create(Request $request)
     {
-        $categories = Category::orderBy('name')->get();
+        $categories = Categoria::orderBy('name')->get();
 
-        // Pré‑seleciona a última categoria (COOKIE), se houver
+        // Última categoria do cookie
         $lastCategory = $request->cookie('last_category');
 
-        return view('products.create', compact('categories','lastCategory'));
+        return view('produtos.create', compact('categories', 'lastCategory'));
     }
 
-    public function store(StoreProductRequest $request)
-    {
-        $data = $request->validated();
+    // POST /produtos
+    public function store(Request $request)
+{
+    $data = $request->validate([
+        'category_id' => ['required','exists:categories,id'],
+        'name'        => ['required','string','max:150'],
+        'price'       => ['required','numeric','min:0'],
+        'image'       => ['nullable','image','mimes:jpg,jpeg,png','max:2048'],
+        'description' => ['nullable','string','max:2000'],
+    ]);
 
-        if ($request->hasFile('image')) {
-            // salva no disco 'public' em 'products'
-            $data['image_path'] = $request->file('image')->store('products', 'public');
+    if ($request->hasFile('image')) {
+        $data['image_path'] = $request->file('image')->store('products', 'public');
+    }
+if ($request->hasFile('image')) {
+    $file = $request->file('image');
+    dd([
+        'exists' => $file->isValid(),
+        'originalName' => $file->getClientOriginalName(),
+        'size' => $file->getSize(),
+    ]);
+}
+    $produto = Produto::create($data);
+
+    // AQUI sim, $data já existe
+    Cookie::queue('last_category', $data['category_id'], 60 * 24 * 30);
+
+    return redirect()->route('produtos.index')
+        ->with('success', 'Produto criado com sucesso!');
+}
+
+
+    // GET /produtos/{produto}/edit
+    public function edit(Produto $produto)
+    {
+        $categories = Categoria::orderBy('name')->get();
+
+        return view('produtos.edit', compact('produto', 'categories'));
+    }
+
+    // PUT /produtos/{produto}
+   public function update(Request $request, Produto $produto)
+{
+    $data = $request->validate([
+        'category_id' => ['required','exists:categories,id'],
+        'name'        => ['required','string','max:150'],
+        'price'       => ['required','numeric','min:0'],
+        'image'       => ['nullable','image','mimes:jpeg,jpg,png','max:2048'],
+        'description' => ['nullable','string','max:2000'],
+    ]);
+
+    // Troca de imagem
+    if ($request->hasFile('image')) {
+        if ($produto->image_path) {
+            Storage::disk('public')->delete($produto->image_path);
         }
 
-        $product = Product::create($data);
-
-        // Atualiza cookie com última categoria usada
-        Cookie::queue('last_category', $product->category_id, 60 * 24 * 30);
-
-        return redirect()->route('products.index')
-            ->with('success', 'Produto criado com sucesso!');
+        $data['image_path'] = $request->file('image')->store('products', 'public');
     }
 
-    public function edit(Product $product)
-    {
-        $categories = Category::orderBy('name')->get();
-        return view('products.edit', compact('product','categories'));
-    }
+    $produto->update($data);
 
-    public function update(UpdateProductRequest $request, Product $product)
-    {
-        $data = $request->validated();
+    // Cookie correto
+    Cookie::queue('last_category', $produto->category_id, 60 * 24 * 30);
 
-        if ($request->hasFile('image')) {
-            if ($product->image_path) {
-                Storage::disk('public')->delete($product->image_path);
-            }
-            $data['image_path'] = $request->file('image')->store('products', 'public');
+    return redirect()->route('produtos.index')
+        ->with('success', 'Produto atualizado com sucesso!');
+}
+
+
+    // DELETE /produtos/{produto}
+    public function destroy(Produto $produto)
+    {
+        if ($produto->image_path) {
+            Storage::disk('public')->delete($produto->image_path);
         }
 
-        $product->update($data);
+        $produto->delete();
 
-        Cookie::queue('last_category', $product->category_id, 60 * 24 * 30);
-
-        return redirect()->route('products.index')
-            ->with('success', 'Produto atualizado com sucesso!');
-    }
-
-    public function destroy(Product $product)
-    {
-        if ($product->image_path) {
-            Storage::disk('public')->delete($product->image_path);
-        }
-
-        $product->delete();
-
-        return redirect()->route('products.index')
+        return redirect()->route('produtos.index')
             ->with('success', 'Produto excluído com sucesso!');
     }
+    
 }
